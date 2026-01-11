@@ -2,31 +2,31 @@
 
 import { useEffect, useState, use } from "react";
 import { FileExplorer } from "@/components/ide/FileExplorer";
+import { ActivityBar } from "@/components/ide/ActivityBar";
+import { StatusBar } from "@/components/ide/StatusBar";
+import { EditorTabs } from "@/components/ide/EditorTabs";
 import { EditorComponent } from "@/components/ide/Editor";
 import { TerminalComponent } from "@/components/ide/Terminal";
 import { fetchAPI } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Save, Play } from "lucide-react";
+import { Save, Play, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-
-// Since this is a Client Component, we need to unwrap params with React.use() in Next 15+ or 
-// just use the prop if it's passed as a Promise (in some setups). 
-// However, in standard Next.js App Router for page.tsx, params is a Promise.
-// Let's assume params is a Promise as per latest Next.js conventions.
+import { cn } from "@/lib/utils";
 
 interface PageProps {
     params: Promise<{ projectId: string }>;
 }
 
 export default function EditorPage({ params }: PageProps) {
-    // Unwrap params using React.use() hook (available in Next.js 13+ / React 18+)
     const unwrappedParams = use(params);
     const projectId = parseInt(unwrappedParams.projectId);
 
     const [project, setProject] = useState<any>(null);
     const [activeFile, setActiveFile] = useState<string | null>(null);
+    const [openFiles, setOpenFiles] = useState<string[]>([]);
     const [fileContent, setFileContent] = useState("");
     const [isDirty, setIsDirty] = useState(false);
+    const [activeView, setActiveView] = useState("explorer");
     const router = useRouter();
 
     useEffect(() => {
@@ -42,7 +42,6 @@ export default function EditorPage({ params }: PageProps) {
         }
     };
 
-    // Load file content when activeFile changes
     useEffect(() => {
         if (!activeFile) return;
         loadContent(activeFile);
@@ -58,6 +57,25 @@ export default function EditorPage({ params }: PageProps) {
         }
     };
 
+    const handleFileSelect = (path: string) => {
+        setActiveFile(path);
+        if (!openFiles.includes(path)) {
+            setOpenFiles([...openFiles, path]);
+        }
+    };
+
+    const handleCloseFile = (path: string) => {
+        const newOpenFiles = openFiles.filter(f => f !== path);
+        setOpenFiles(newOpenFiles);
+        if (activeFile === path) {
+            if (newOpenFiles.length > 0) {
+                setActiveFile(newOpenFiles[newOpenFiles.length - 1]);
+            } else {
+                setActiveFile(null);
+            }
+        }
+    };
+
     const handleSave = async () => {
         if (!activeFile) return;
         try {
@@ -70,48 +88,77 @@ export default function EditorPage({ params }: PageProps) {
                 }),
             });
             setIsDirty(false);
-            // alert("Saved!");
         } catch (error) {
             alert("Failed to save");
         }
     };
 
     return (
-        <div className="flex h-screen w-full flex-col overflow-hidden bg-background">
-            {/* Top Bar */}
-            <div className="flex h-12 items-center justify-between border-b px-4 bg-zinc-100 dark:bg-zinc-900">
-                <div className="font-semibold">Project ID: {projectId}</div>
-                <div className="flex items-center gap-2">
-                    {activeFile && (
-                        <span className="text-sm text-muted-foreground mr-4">
-                            {activeFile} {isDirty ? "*" : ""}
-                        </span>
-                    )}
-                    <Button size="sm" variant="ghost" onClick={handleSave} disabled={!isDirty}>
-                        <Save className="h-4 w-4 mr-2" />
-                        Save
-                    </Button>
-                    <Button size="sm" variant="default" onClick={() => project && window.open(project.web_url, '_blank')} disabled={!project}>
-                        <Play className="h-4 w-4 mr-2" />
-                        Preview
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => router.push('/dashboard')}>
-                        Dashboard
-                    </Button>
-                </div>
-            </div>
+        <div className="flex h-screen w-full flex-col overflow-hidden bg-[#1e1e1e] text-[#cccccc]">
+            {/* Top Bar (Optional, simpler in this layout) */}
+            {/* We can hide the top bar or make it very slim if we want true VS Code full screen feel, 
+          but we need a way to go back to dashboard and preview. Let's keep a very slim header or putting it in status bar?
+          Let's put it in the top for now but styled dark. */}
 
             {/* Main Workspace */}
             <div className="flex flex-1 overflow-hidden">
+
+                {/* Activity Bar */}
+                <ActivityBar activeView={activeView} onViewChange={setActiveView} />
+
                 {/* Sidebar */}
-                <FileExplorer
-                    projectId={projectId}
-                    onFileSelect={(path) => setActiveFile(path)}
-                />
+                <div className={cn("flex w-64 flex-col border-r border-[#2b2b2b] bg-[#252526]", activeView === 'explorer' ? 'block' : 'hidden')}>
+                    <FileExplorer
+                        projectId={projectId}
+                        onFileSelect={handleFileSelect}
+                        activeFile={activeFile}
+                    />
+
+                    {/* Preview Button in Sidebar for convenience */}
+                    <div className="p-4 border-t border-[#2b2b2b]">
+                        <Button
+                            className="w-full bg-green-700 hover:bg-green-600 text-white"
+                            size="sm"
+                            onClick={() => project && window.open(project.web_url, '_blank')}
+                            disabled={!project}
+                        >
+                            <Play className="h-4 w-4 mr-2" />
+                            Run Project
+                        </Button>
+                        <Button
+                            className="w-full mt-2"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => router.push('/dashboard')}
+                        >
+                            Back to Dashboard
+                        </Button>
+                    </div>
+                </div>
 
                 {/* Editor Area */}
-                <div className="flex flex-1 flex-col">
-                    <div className="flex-1 border-b relative">
+                <div className="flex flex-1 flex-col bg-[#1e1e1e]">
+                    {/* Tabs */}
+                    <div className="flex bg-[#252526]">
+                        <div className="flex-1 overflow-x-auto no-scrollbar">
+                            <EditorTabs
+                                files={openFiles}
+                                activeFile={activeFile}
+                                onSelect={handleFileSelect}
+                                onClose={handleCloseFile}
+                                unsavedFiles={activeFile && isDirty ? [activeFile] : []}
+                            />
+                        </div>
+                        {/* Actions Grid */}
+                        <div className="flex items-center gap-1 px-2 border-l border-[#2b2b2b]">
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-[#cccccc] hover:bg-[#333]" onClick={handleSave} disabled={!isDirty}>
+                                <Save className="h-4 w-4" />
+                            </Button>
+                        </div>
+                    </div>
+
+                    {/* Editor */}
+                    <div className="flex-1 relative">
                         {activeFile ? (
                             <EditorComponent
                                 content={fileContent}
@@ -123,18 +170,27 @@ export default function EditorPage({ params }: PageProps) {
                                 language={activeFile.endsWith('.php') ? 'php' : activeFile.endsWith('.js') ? 'javascript' : activeFile.endsWith('.css') ? 'css' : 'plaintext'}
                             />
                         ) : (
-                            <div className="flex h-full items-center justify-center text-muted-foreground">
-                                Select a file to edit
+                            <div className="flex h-full items-center justify-center text-[#585858] flex-col gap-4">
+                                <div className="text-xl">Select a file to edit</div>
                             </div>
                         )}
                     </div>
 
-                    {/* Terminal */}
-                    <div className="h-48 border-t">
-                        <TerminalComponent />
+                    {/* Terminal Panel */}
+                    <div className="h-48 border-t border-[#2b2b2b] bg-[#1e1e1e] flex flex-col">
+                        <div className="flex items-center gap-4 px-4 py-1 text-xs uppercase border-b border-[#2b2b2b] text-[#969696] bg-[#1e1e1e]">
+                            <span className="cursor-pointer hover:text-white border-b border-white text-white py-1">Terminal</span>
+                            <div className="flex-1" />
+                            <X className="h-3 w-3 cursor-pointer hover:text-white" />
+                        </div>
+                        <div className="flex-1 overflow-hidden">
+                            <TerminalComponent />
+                        </div>
                     </div>
                 </div>
             </div>
+
+            <StatusBar />
         </div>
     );
 }
