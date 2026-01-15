@@ -11,11 +11,11 @@ if (!Auth::check()) {
     exit;
 }
 
-$id = $_GET['id'] ?? null;
+$uuid = $_GET['id'] ?? null;
 
-if (!$id) {
+if (!$uuid) {
     http_response_code(400);
-    echo json_encode(['error' => 'Project ID required']);
+    echo json_encode(['error' => 'Project UUID required']);
     exit;
 }
 
@@ -23,7 +23,7 @@ $user = Auth::user();
 $projectLib = new Project($user['id']);
 
 try {
-    $project = $projectLib->get($id);
+    $project = $projectLib->get($uuid);
     if (!$project) {
         http_response_code(404);
         echo json_encode(['error' => 'Project not found']);

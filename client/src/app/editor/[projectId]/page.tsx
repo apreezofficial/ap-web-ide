@@ -9,7 +9,7 @@ import { EditorComponent } from "@/components/ide/Editor";
 import { TerminalComponent } from "@/components/ide/Terminal";
 import { fetchAPI } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Save, Play, X } from "lucide-react";
+import { Save, Play, X, Github } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 
@@ -82,16 +82,41 @@ export default function EditorPage({ params }: PageProps) {
             await fetchAPI("/files/write.php", {
                 method: "POST",
                 body: JSON.stringify({
-                    project_id: projectId,
+                    project_id: unwrappedParams.projectId, // Using the UUID from params
                     path: activeFile,
                     content: fileContent,
                 }),
             });
             setIsDirty(false);
         } catch (error) {
-            alert("Failed to save");
+            console.error("Failed to save", error);
         }
     };
+
+    const handlePush = async () => {
+        try {
+            const res = await fetchAPI("/github/push.php", {
+                method: "POST",
+                body: JSON.stringify({ project_id: unwrappedParams.projectId }),
+            });
+            if (res.success) {
+                alert("Pushed to GitHub successfully!");
+            }
+        } catch (error) {
+            alert("Failed to push to GitHub: " + error);
+        }
+    };
+
+    // Auto-save logic
+    useEffect(() => {
+        if (!isDirty || !activeFile) return;
+
+        const timer = setTimeout(() => {
+            handleSave();
+        }, 2000); // Auto-save after 2 seconds of inactivity
+
+        return () => clearTimeout(timer);
+    }, [fileContent, isDirty, activeFile]);
 
     return (
         <div className="flex h-screen w-full flex-col overflow-hidden bg-[#1e1e1e] text-[#cccccc]">
@@ -124,6 +149,15 @@ export default function EditorPage({ params }: PageProps) {
                         >
                             <Play className="h-4 w-4 mr-2" />
                             Run Project
+                        </Button>
+                        <Button
+                            className="w-full mt-2 bg-blue-700 hover:bg-blue-600 text-white"
+                            size="sm"
+                            onClick={handlePush}
+                            disabled={!project}
+                        >
+                            <Github className="h-4 w-4 mr-2" />
+                            Push to GitHub
                         </Button>
                         <Button
                             className="w-full mt-2"

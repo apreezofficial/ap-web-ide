@@ -12,6 +12,16 @@ class Project {
         $this->userId = $userId;
     }
 
+    private function generateUUID() {
+        return sprintf('%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
+            mt_rand(0, 0xffff), mt_rand(0, 0xffff),
+            mt_rand(0, 0xffff),
+            mt_rand(0, 0x0fff) | 0x4000,
+            mt_rand(0, 0x3fff) | 0x8000,
+            mt_rand(0, 0xffff), mt_rand(0, 0xffff), mt_rand(0, 0xffff)
+        );
+    }
+
     public function create($name, $template = 'blank') {
         // Sanitize name to be filesystem safe
         $safeName = preg_replace('/[^a-zA-Z0-9_-]/', '', $name);
@@ -37,10 +47,63 @@ class Project {
         }
 
         // Save to DB
-        $stmt = $this->db->prepare("INSERT INTO projects (user_id, name, path) VALUES (?, ?, ?)");
-        $stmt->execute([$this->userId, $name, $safeName]);
+        $uuid = $this->generateUUID();
+        $stmt = $this->db->prepare("INSERT INTO projects (user_id, uuid, name, path) VALUES (?, ?, ?, ?)");
+        $stmt->execute([$this->userId, $uuid, $name, $safeName]);
         
-        return $this->db->lastInsertId();
+        return $uuid;
+    }
+
+    public function importFromGithub($name, $cloneUrl) {
+        // Sanitize name to be filesystem safe
+        $safeName = preg_replace('/[^a-zA-Z0-9_-]/', '', $name);
+        $projectPath = WORKSPACES_PATH . '/' . $this->userId . '/' . $safeName;
+        
+        if (is_dir($projectPath)) {
+            // If it exists, we might want to skip or overwrite. 
+            // For now, let's append a timestamp if it exists.
+            if (is_dir($projectPath)) {
+               $safeName .= '_' . time();
+               $projectPath = WORKSPACES_PATH . '/' . $this->userId . '/' . $safeName;
+            }
+        }
+
+        // Create user workspace directory if not exists
+        if (!is_dir(WORKSPACES_PATH . '/' . $this->userId)) {
+            mkdir(WORKSPACES_PATH . '/' . $this->userId, 0777, true);
+        }
+
+        // Use git clone
+        $user = Auth::user();
+        $token = $user['access_token'];
+        
+        // Ensure we use the token correctly
+        if (strpos($cloneUrl, 'https://github.com/') === 0) {
+            $authCloneUrl = str_replace('https://github.com/', "https://$token@github.com/", $cloneUrl);
+        } else {
+            $authCloneUrl = $cloneUrl; // Fallback
+        }
+        
+        $escapedCloneUrl = escapeshellarg($authCloneUrl);
+        $escapedPath = escapeshellarg($projectPath);
+        
+        $output = [];
+        $returnVar = 0;
+        // Run git clone
+        exec("git clone $escapedCloneUrl $escapedPath 2>&1", $output, $returnVar);
+
+        if ($returnVar !== 0) {
+            // Scrub token from error message for security
+            $errorMessage = str_replace($token, 'GITHUB_TOKEN', implode("\n", $output));
+            throw new Exception("Failed to clone repository: " . $errorMessage);
+        }
+
+        // Save to DB
+        $uuid = $this->generateUUID();
+        $stmt = $this->db->prepare("INSERT INTO projects (user_id, uuid, name, path, repo_url) VALUES (?, ?, ?, ?, ?)");
+        $stmt->execute([$this->userId, $uuid, $name, $safeName, $cloneUrl]);
+        
+        return $uuid;
     }
 
     public function list() {
@@ -49,21 +112,21 @@ class Project {
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
     
-    public function get($id) {
-        $stmt = $this->db->prepare("SELECT * FROM projects WHERE id = ? AND user_id = ?");
-        $stmt->execute([$id, $this->userId]);
+    public function get($uuid) {
+        $stmt = $this->db->prepare("SELECT * FROM projects WHERE uuid = ? AND user_id = ?");
+        $stmt->execute([$uuid, $this->userId]);
         return $stmt->fetch(PDO::FETCH_ASSOC);
     }
 
-    public function delete($id) {
-        $project = $this->get($id);
+    public function delete($uuid) {
+        $project = $this->get($uuid);
         if (!$project) return false;
         
         $path = WORKSPACES_PATH . '/' . $this->userId . '/' . $project['path'];
         $this->deleteDir($path);
         
-        $stmt = $this->db->prepare("DELETE FROM projects WHERE id = ?");
-        return $stmt->execute([$id]);
+        $stmt = $this->db->prepare("DELETE FROM projects WHERE uuid = ?");
+        return $stmt->execute([$uuid]);
     }
 
     private function deleteDir($dirPath) {

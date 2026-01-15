@@ -1,16 +1,18 @@
 <?php
 // lib/Auth.php
+require_once __DIR__ . '/../config/config.php';
+
+require_once __DIR__ . '/Database.php';
 
 class Auth {
     private $db;
 
     public function __construct() {
-        require_once __DIR__ . '/Database.php';
         $this->db = Database::getInstance()->getConnection();
     }
 
     public function getLoginUrl() {
-        require_once __DIR__ . '/../config/config.php';
+
         $params = [
             'client_id' => GITHUB_CLIENT_ID,
             'redirect_uri' => GITHUB_REDIRECT_URI,
@@ -22,7 +24,6 @@ class Auth {
     }
 
     public function handleCallback($code, $state) {
-        require_once __DIR__ . '/../config/config.php';
         
         if ($state !== $_SESSION['oauth_state']) {
             throw new Exception("Invalid state");

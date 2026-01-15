@@ -1,4 +1,4 @@
-const API_BASE_URL = "http://localhost/ap%20ai%20ide/server/api";
+const API_BASE_URL = "/api";
 
 export async function fetchAPI(endpoint: string, options: RequestInit = {}) {
     const res = await fetch(`${API_BASE_URL}${endpoint}`, {

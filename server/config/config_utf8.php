@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 // config.php - Configuration for the AP IDE backend
 
 define('DB_HOST', 'localhost');

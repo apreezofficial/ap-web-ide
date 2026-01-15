@@ -12,7 +12,7 @@ interface FileSystemItem {
 }
 
 interface FileExplorerProps {
-    projectId: number;
+    projectId: string; // Changed to string (UUID)
     onFileSelect: (path: string) => void;
     activeFile: string | null;
 }
@@ -60,11 +60,49 @@ export function FileExplorer({ projectId, onFileSelect, activeFile }: FileExplor
         return <File className="h-4 w-4 text-[#cccccc]" />;
     };
 
+    const handleCreate = async (type: "file" | "directory") => {
+        const name = prompt(`Enter ${type} name:`);
+        if (!name) return;
+
+        const path = currentPath ? `${currentPath}/${name}` : name;
+        try {
+            const res = await fetchAPI("/files/create.php", {
+                method: "POST",
+                body: JSON.stringify({
+                    project_id: projectId,
+                    path,
+                    type,
+                }),
+            });
+            if (res.success) {
+                loadFiles(currentPath);
+            }
+        } catch (error) {
+            alert(`Failed to create ${type}`);
+        }
+    };
+
     return (
         <div className="flex flex-col h-full bg-[#252526] text-[#cccccc]">
-            <div className="flex items-center justify-between px-4 py-2 text-xs font-semibold uppercase tracking-wider text-[#bbbbbb] hover:bg-[#2a2d2e] cursor-pointer">
+            <div className="flex items-center justify-between px-4 py-2 text-xs font-semibold uppercase tracking-wider text-[#bbbbbb] hover:bg-[#2a2d2e] group">
                 <span>Explorer</span>
-                <MoreHorizontal className="h-4 w-4" />
+                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                        onClick={() => handleCreate("file")}
+                        className="p-1 hover:bg-[#37373d] rounded"
+                        title="New File"
+                    >
+                        <File className="h-4 w-4" />
+                    </button>
+                    <button
+                        onClick={() => handleCreate("directory")}
+                        className="p-1 hover:bg-[#37373d] rounded"
+                        title="New Folder"
+                    >
+                        <Folder className="h-4 w-4" />
+                    </button>
+                    <MoreHorizontal className="h-4 w-4 cursor-pointer" />
+                </div>
             </div>
 
             <div className="flex-1 overflow-y-auto">
