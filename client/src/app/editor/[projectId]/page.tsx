@@ -9,9 +9,11 @@ import { EditorComponent } from "@/components/ide/Editor";
 import { TerminalComponent } from "@/components/ide/Terminal";
 import { fetchAPI } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Save, Play, X, Github } from "lucide-react";
+import { Save, Play, X, Github, Eye, Code, Loader2, Wand2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { FilePreview } from "@/components/ide/FilePreview";
+import { toast } from "@/components/ui/Toaster";
 
 interface PageProps {
     params: Promise<{ projectId: string }>;
@@ -19,14 +21,16 @@ interface PageProps {
 
 export default function EditorPage({ params }: PageProps) {
     const unwrappedParams = use(params);
-    const projectId = parseInt(unwrappedParams.projectId);
+    const projectId = unwrappedParams.projectId; // UUID string
 
     const [project, setProject] = useState<any>(null);
+    const [loading, setLoading] = useState(true);
     const [activeFile, setActiveFile] = useState<string | null>(null);
     const [openFiles, setOpenFiles] = useState<string[]>([]);
     const [fileContent, setFileContent] = useState("");
     const [isDirty, setIsDirty] = useState(false);
     const [activeView, setActiveView] = useState("explorer");
+    const [previewMode, setPreviewMode] = useState(false);
     const router = useRouter();
 
     useEffect(() => {
@@ -34,11 +38,14 @@ export default function EditorPage({ params }: PageProps) {
     }, [projectId]);
 
     const loadProject = async () => {
+        setLoading(true);
         try {
             const data = await fetchAPI(`/projects/get.php?id=${projectId}`);
             setProject(data.project);
         } catch (error) {
             console.error("Failed to load project", error);
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -62,6 +69,24 @@ export default function EditorPage({ params }: PageProps) {
         if (!openFiles.includes(path)) {
             setOpenFiles([...openFiles, path]);
         }
+        // Auto-switch to preview for media/markdown if preferred? 
+        // Let's keep it manual for now but maybe default to preview for images.
+        if (isImage(path)) {
+            setPreviewMode(true);
+        } else {
+            setPreviewMode(false);
+        }
+    };
+
+    const isImage = (path: string) => /\.(png|jpg|jpeg|gif|svg|webp|ico)$/i.test(path);
+    const isMarkdown = (path: string) => /\.md$/i.test(path);
+    const isHtml = (path: string) => /\.html$/i.test(path);
+
+    const getFileType = (path: string): "markdown" | "image" | "html" | "other" => {
+        if (isMarkdown(path)) return "markdown";
+        if (isImage(path)) return "image";
+        if (isHtml(path)) return "html";
+        return "other";
     };
 
     const handleCloseFile = (path: string) => {
@@ -78,32 +103,36 @@ export default function EditorPage({ params }: PageProps) {
 
     const handleSave = async () => {
         if (!activeFile) return;
+        toast.loading("Saving file...");
         try {
             await fetchAPI("/files/write.php", {
                 method: "POST",
                 body: JSON.stringify({
-                    project_id: unwrappedParams.projectId, // Using the UUID from params
+                    project_id: projectId,
                     path: activeFile,
                     content: fileContent,
                 }),
             });
             setIsDirty(false);
-        } catch (error) {
+            toast.success("File saved fr fr!");
+        } catch (error: any) {
             console.error("Failed to save", error);
+            toast.error(error.message || "Failed to save");
         }
     };
 
     const handlePush = async () => {
+        toast.loading("Pushing to GitHub...");
         try {
-            const res = await fetchAPI("/github/push.php", {
+            const res = await fetchAPI("/projects/push.php", {
                 method: "POST",
-                body: JSON.stringify({ project_id: unwrappedParams.projectId }),
+                body: JSON.stringify({ id: projectId }),
             });
             if (res.success) {
-                alert("Pushed to GitHub successfully!");
+                toast.success("Pushed to GitHub successfully!");
             }
-        } catch (error) {
-            alert("Failed to push to GitHub: " + error);
+        } catch (error: any) {
+            toast.error(error.message || "Failed to push to GitHub");
         }
     };
 
@@ -185,24 +214,74 @@ export default function EditorPage({ params }: PageProps) {
                         </div>
                         {/* Actions Grid */}
                         <div className="flex items-center gap-1 px-2 border-l border-[#2b2b2b]">
+                            {activeFile && (getFileType(activeFile) !== "other" || isMarkdown(activeFile)) && (
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className={cn("h-8 w-8 text-[#cccccc] hover:bg-[#333]", previewMode && "bg-[#333] text-white")}
+                                    onClick={() => setPreviewMode(!previewMode)}
+                                    title={previewMode ? "Show Code" : "Show Preview"}
+                                >
+                                    {previewMode ? <Code className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                                </Button>
+                            )}
+                            {!previewMode && (
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 text-[#cccccc] hover:bg-[#333]"
+                                    onClick={() => {
+                                        // We'll need a way to trigger formatting in the child.
+                                        // For now, let's just use the shortcut message or a custom event.
+                                        const event = new CustomEvent('ide-format-code');
+                                        window.dispatchEvent(event);
+                                    }}
+                                    title="Format Code"
+                                >
+                                    <Wand2 className="h-4 w-4" />
+                                </Button>
+                            )}
                             <Button variant="ghost" size="icon" className="h-8 w-8 text-[#cccccc] hover:bg-[#333]" onClick={handleSave} disabled={!isDirty}>
                                 <Save className="h-4 w-4" />
                             </Button>
                         </div>
                     </div>
 
-                    {/* Editor */}
-                    <div className="flex-1 relative">
-                        {activeFile ? (
-                            <EditorComponent
-                                content={fileContent}
-                                onChange={(val) => {
-                                    setFileContent(val);
-                                    setIsDirty(true);
-                                }}
-                                onSave={handleSave}
-                                language={activeFile.endsWith('.php') ? 'php' : activeFile.endsWith('.js') ? 'javascript' : activeFile.endsWith('.css') ? 'css' : 'plaintext'}
-                            />
+                    {/* Editor or Preview */}
+                    <div className="flex-1 relative overflow-hidden">
+                        {loading ? (
+                            <div className="flex h-full items-center justify-center">
+                                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                            </div>
+                        ) : activeFile ? (
+                            previewMode ? (
+                                <FilePreview
+                                    projectId={projectId}
+                                    path={activeFile}
+                                    content={fileContent}
+                                    type={getFileType(activeFile)}
+                                />
+                            ) : (
+                                <EditorComponent
+                                    content={fileContent}
+                                    onChange={(val) => {
+                                        setFileContent(val);
+                                        setIsDirty(true);
+                                    }}
+                                    onSave={handleSave}
+                                    language={
+                                        activeFile.endsWith('.php') ? 'php' :
+                                            activeFile.endsWith('.js') ? 'javascript' :
+                                                activeFile.endsWith('.ts') ? 'typescript' :
+                                                    activeFile.endsWith('.tsx') ? 'typescript' :
+                                                        activeFile.endsWith('.css') ? 'css' :
+                                                            activeFile.endsWith('.html') ? 'html' :
+                                                                activeFile.endsWith('.json') ? 'json' :
+                                                                    activeFile.endsWith('.md') ? 'markdown' :
+                                                                        'plaintext'
+                                    }
+                                />
+                            )
                         ) : (
                             <div className="flex h-full items-center justify-center text-[#585858] flex-col gap-4">
                                 <div className="text-xl">Select a file to edit</div>

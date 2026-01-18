@@ -87,15 +87,23 @@ class Project {
         $escapedCloneUrl = escapeshellarg($authCloneUrl);
         $escapedPath = escapeshellarg($projectPath);
         
-        $output = [];
-        $returnVar = 0;
         // Run git clone
-        exec("git clone $escapedCloneUrl $escapedPath 2>&1", $output, $returnVar);
+        $command = "git clone $escapedCloneUrl $escapedPath 2>&1";
+        exec($command, $output, $returnVar);
 
         if ($returnVar !== 0) {
+            // Cleanup directory on failure
+            if (is_dir($projectPath)) {
+                $this->deleteDir($projectPath);
+            }
+            
             // Scrub token from error message for security
             $errorMessage = str_replace($token, 'GITHUB_TOKEN', implode("\n", $output));
-            throw new Exception("Failed to clone repository: " . $errorMessage);
+            
+            // Log for debugging (optional, but good for "fr fr")
+            error_log("Git clone failed: " . $errorMessage);
+            
+            throw new Exception("Failed to clone repository. Make sure the repo exists and is accessible. Error: " . $errorMessage);
         }
 
         // Save to DB

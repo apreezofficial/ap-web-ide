@@ -1,8 +1,41 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import { Github, Code2 } from "lucide-react";
+import { Github, Code2, Loader2 } from "lucide-react";
+import { fetchAPI } from "@/lib/api";
+import { useRouter } from "next/navigation";
 
 export default function Home() {
+  const [loading, setLoading] = useState(true);
+  const router = useRouter();
+
+  useEffect(() => {
+    checkAuth();
+  }, []);
+
+  const checkAuth = async () => {
+    try {
+      const data = await fetchAPI("/auth/user.php");
+      if (data.authenticated) {
+        router.push("/dashboard/projects");
+      } else {
+        setLoading(false);
+      }
+    } catch (error) {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-950 p-4">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-950 p-4">
       <Card className="w-full max-w-[400px] shadow-xl border-t-4 border-t-primary">
