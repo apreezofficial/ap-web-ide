@@ -1,6 +1,6 @@
 "use client";
 
-import { Files, Search, GitGraph, Settings, Code2 } from "lucide-react";
+import { Files, Search, GitGraph, Settings, Code2, Bot } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ActivityBarProps {
@@ -13,6 +13,7 @@ export function ActivityBar({ activeView, onViewChange }: ActivityBarProps) {
         { id: "explorer", icon: Files },
         { id: "search", icon: Search },
         { id: "git", icon: GitGraph },
+        { id: "ai", icon: Bot }, // Added AI icon
     ];
 
     return (

@@ -1,0 +1,13 @@
+{
+    "name": "api-server-extensions",
+    "version": "1.0.0",
+    "description": "Node.js extensions for PHP backend",
+    "main": "terminal-server.js",
+    "scripts": {
+        "start-terminal": "node terminal-server.js"
+    },
+    "dependencies": {
+        "node-pty": "^1.0.0",
+        "ws": "^8.16.0"
+    }
+}

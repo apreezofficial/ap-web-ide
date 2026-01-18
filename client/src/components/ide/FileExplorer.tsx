@@ -33,7 +33,15 @@ export function FileExplorer({ projectId, onFileSelect, activeFile }: FileExplor
         setLoading(true);
         try {
             const data = await fetchAPI(`/files/list.php?project_id=${projectId}&path=${path}`);
-            setItems(data.files || []);
+            const sortedFiles = (data.files || []).sort((a: FileSystemItem, b: FileSystemItem) => {
+                // First, sort by type: directory before file
+                if (a.type !== b.type) {
+                    return a.type === "directory" ? -1 : 1;
+                }
+                // Then, sort alphabetically by name
+                return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+            });
+            setItems(sortedFiles);
         } catch (error) {
             console.error("Failed to load files", error);
         } finally {

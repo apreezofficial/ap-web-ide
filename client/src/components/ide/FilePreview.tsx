@@ -7,7 +7,7 @@ interface FilePreviewProps {
     projectId: string;
     path: string;
     content: string;
-    type: "markdown" | "image" | "html" | "other";
+    type: "markdown" | "image" | "html" | "code" | "other";
 }
 
 export function FilePreview({ projectId, path, content, type }: FilePreviewProps) {

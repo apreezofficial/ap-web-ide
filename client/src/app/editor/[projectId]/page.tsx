@@ -6,10 +6,20 @@ import { ActivityBar } from "@/components/ide/ActivityBar";
 import { StatusBar } from "@/components/ide/StatusBar";
 import { EditorTabs } from "@/components/ide/EditorTabs";
 import { EditorComponent } from "@/components/ide/Editor";
-import { TerminalComponent } from "@/components/ide/Terminal";
+// import { TerminalComponent } from "@/components/ide/Terminal";
+import { SourceControl } from "@/components/ide/SourceControl";
+import { Search } from "@/components/ide/Search";
+import { AIAssistant } from "@/components/ide/AIAssistant";
 import { fetchAPI } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Save, Play, X, Github, Eye, Code, Loader2, Wand2 } from "lucide-react";
+import { Save, Play, X, Github, Eye, Code, Loader2, Wand2, ChevronUp, ChevronDown, Bot, Files } from "lucide-react";
+import dynamic from 'next/dynamic';
+
+const TerminalComponent = dynamic(() => import('@/components/ide/Terminal').then(mod => mod.TerminalComponent), {
+    ssr: false,
+    loading: () => <div className="h-full bg-zinc-950 text-zinc-500 p-2">Loading terminal...</div>
+});
+// Imports already declared above, removing duplicates
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { FilePreview } from "@/components/ide/FilePreview";
@@ -20,113 +30,119 @@ interface PageProps {
 }
 
 export default function EditorPage({ params }: PageProps) {
-    const unwrappedParams = use(params);
-    const projectId = unwrappedParams.projectId; // UUID string
-
+    const { projectId } = use(params);
+    const router = useRouter();
     const [project, setProject] = useState<any>(null);
     const [loading, setLoading] = useState(true);
+    const [activeView, setActiveView] = useState('explorer');
     const [activeFile, setActiveFile] = useState<string | null>(null);
     const [openFiles, setOpenFiles] = useState<string[]>([]);
-    const [fileContent, setFileContent] = useState("");
+    const [fileContent, setFileContent] = useState<string>("");
     const [isDirty, setIsDirty] = useState(false);
-    const [activeView, setActiveView] = useState("explorer");
     const [previewMode, setPreviewMode] = useState(false);
-    const router = useRouter();
+
+    // Terminal State
+    const [terminalHeight, setTerminalHeight] = useState(250);
+    const [isTerminalOpen, setIsTerminalOpen] = useState(true);
+    const [isResizingTerminal, setIsResizingTerminal] = useState(false);
 
     useEffect(() => {
-        loadProject();
+        const handleMouseMove = (e: MouseEvent) => {
+            if (!isResizingTerminal) return;
+            const newHeight = window.innerHeight - e.clientY;
+            // Min height 30px (header), max height 80% of screen
+            if (newHeight >= 30 && newHeight < window.innerHeight * 0.8) {
+                setTerminalHeight(newHeight);
+            }
+        };
+
+        const handleMouseUp = () => {
+            setIsResizingTerminal(false);
+            document.body.style.cursor = 'default';
+        };
+
+        if (isResizingTerminal) {
+            document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('mouseup', handleMouseUp);
+            document.body.style.cursor = 'row-resize';
+        }
+
+        return () => {
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+            document.body.style.cursor = 'default';
+        };
+    }, [isResizingTerminal]);
+
+    useEffect(() => {
+        if (projectId) {
+            fetchProject();
+        }
     }, [projectId]);
 
-    const loadProject = async () => {
-        setLoading(true);
+    const fetchProject = async () => {
         try {
             const data = await fetchAPI(`/projects/get.php?id=${projectId}`);
-            setProject(data.project);
-        } catch (error) {
-            console.error("Failed to load project", error);
+            setProject(data);
+        } catch (error: any) {
+            console.error(error);
+            toast.error("Failed to load project");
         } finally {
             setLoading(false);
         }
     };
 
-    useEffect(() => {
-        if (!activeFile) return;
-        loadContent(activeFile);
-    }, [activeFile]);
-
-    const loadContent = async (path: string) => {
-        try {
-            const data = await fetchAPI(`/files/read.php?project_id=${projectId}&path=${path}`);
-            setFileContent(data.content);
-            setIsDirty(false);
-        } catch (error) {
-            console.error("Failed to load file", error);
-        }
-    };
-
-    const handleFileSelect = (path: string) => {
-        setActiveFile(path);
+    const handleFileSelect = async (path: string) => {
         if (!openFiles.includes(path)) {
             setOpenFiles([...openFiles, path]);
         }
-        // Auto-switch to preview for media/markdown if preferred? 
-        // Let's keep it manual for now but maybe default to preview for images.
-        if (isImage(path)) {
-            setPreviewMode(true);
-        } else {
-            setPreviewMode(false);
+        setActiveFile(path);
+        setLoading(true);
+        try {
+            const data = await fetchAPI(`/files/read.php?project_id=${projectId}&path=${path}`);
+            setFileContent(data.content || "");
+            setIsDirty(false);
+        } catch (error: any) {
+            toast.error("Failed to read file");
+        } finally {
+            setLoading(false);
         }
     };
 
-    const isImage = (path: string) => /\.(png|jpg|jpeg|gif|svg|webp|ico)$/i.test(path);
-    const isMarkdown = (path: string) => /\.md$/i.test(path);
-    const isHtml = (path: string) => /\.html$/i.test(path);
-
-    const getFileType = (path: string): "markdown" | "image" | "html" | "other" => {
-        if (isMarkdown(path)) return "markdown";
-        if (isImage(path)) return "image";
-        if (isHtml(path)) return "html";
-        return "other";
-    };
-
-    const handleCloseFile = (path: string) => {
+    const handleCloseFile = (path: string, e?: React.MouseEvent) => {
+        if (e) e.stopPropagation();
         const newOpenFiles = openFiles.filter(f => f !== path);
         setOpenFiles(newOpenFiles);
         if (activeFile === path) {
-            if (newOpenFiles.length > 0) {
-                setActiveFile(newOpenFiles[newOpenFiles.length - 1]);
-            } else {
-                setActiveFile(null);
-            }
+            setActiveFile(newOpenFiles[newOpenFiles.length - 1] || null);
+            setFileContent("");
         }
     };
 
     const handleSave = async () => {
         if (!activeFile) return;
-        toast.loading("Saving file...");
         try {
             await fetchAPI("/files/write.php", {
                 method: "POST",
                 body: JSON.stringify({
                     project_id: projectId,
                     path: activeFile,
-                    content: fileContent,
-                }),
+                    content: fileContent
+                })
             });
             setIsDirty(false);
-            toast.success("File saved fr fr!");
+            toast.success("File saved");
         } catch (error: any) {
-            console.error("Failed to save", error);
-            toast.error(error.message || "Failed to save");
+            toast.error("Failed to save file");
         }
     };
 
     const handlePush = async () => {
         toast.loading("Pushing to GitHub...");
         try {
-            const res = await fetchAPI("/projects/push.php", {
+            const res = await fetchAPI("/github/push.php", {
                 method: "POST",
-                body: JSON.stringify({ id: projectId }),
+                body: JSON.stringify({ project_id: projectId }),
             });
             if (res.success) {
                 toast.success("Pushed to GitHub successfully!");
@@ -136,71 +152,161 @@ export default function EditorPage({ params }: PageProps) {
         }
     };
 
-    // Auto-save logic
-    useEffect(() => {
-        if (!isDirty || !activeFile) return;
+    const getFileType = (path: string): "image" | "code" | "markdown" | "html" | "other" => {
+        const ext = path.split('.').pop()?.toLowerCase();
+        if (['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp'].includes(ext || '')) return 'image';
+        if (['md'].includes(ext || '')) return 'markdown';
+        if (['html'].includes(ext || '')) return 'html';
+        return 'code';
+    };
 
-        const timer = setTimeout(() => {
-            handleSave();
-        }, 2000); // Auto-save after 2 seconds of inactivity
+    const isMarkdown = (path: string) => path.endsWith('.md');
 
-        return () => clearTimeout(timer);
-    }, [fileContent, isDirty, activeFile]);
+    const handleSearchResultClick = (path: string, line: number) => {
+        // Open file functionality
+        if (!openFiles.includes(path)) {
+            setOpenFiles([...openFiles, path]);
+        }
+        setActiveFile(path);
+        // Ideally we would scroll to the line number too, but for now just opening is good.
+        // We can implement scroll later if needed.
+    };
+
+    // ... (existing effects)
+
+    // Mobile State
+    const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+    const [mobileActiveView, setMobileActiveView] = useState<string | null>(null); // For "popups"
+
+    // When view changes on desktop, it's just activeView. On mobile, we might want to open the "sheet"
+    const handleViewChange = (view: string) => {
+        setActiveView(view);
+        setMobileActiveView(view); // On mobile this triggers the popup
+    };
 
     return (
         <div className="flex h-screen w-full flex-col overflow-hidden bg-[#1e1e1e] text-[#cccccc]">
-            {/* Top Bar (Optional, simpler in this layout) */}
-            {/* We can hide the top bar or make it very slim if we want true VS Code full screen feel, 
-          but we need a way to go back to dashboard and preview. Let's keep a very slim header or putting it in status bar?
-          Let's put it in the top for now but styled dark. */}
+            {/* Mobile Header */}
+            <div className="md:hidden flex items-center justify-between p-2 bg-[#252526] border-b border-[#2b2b2b]">
+                <div className="flex items-center gap-2" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
+                    <Files className="h-5 w-5" />
+                    <span className="font-bold text-sm">AP IDE</span>
+                </div>
+                {/* Quick Actions Mobile */}
+                <div className="flex gap-2">
+                    <Button variant="ghost" size="icon" onClick={() => handleViewChange('ai')}><Bot className="h-5 w-5 text-yellow-500" /></Button>
+                    <Button variant="ghost" size="icon" onClick={() => handleViewChange('explorer')}><Files className="h-5 w-5" /></Button>
+                </div>
+            </div>
 
-            {/* Main Workspace */}
-            <div className="flex flex-1 overflow-hidden">
+            {/* Main Layout */}
+            <div className="flex flex-1 overflow-hidden relative">
 
-                {/* Activity Bar */}
-                <ActivityBar activeView={activeView} onViewChange={setActiveView} />
+                {/* Desktop Sidebar & Activity Bar */}
+                <div className="hidden md:flex flex-row h-full">
+                    <ActivityBar activeView={activeView} onViewChange={setActiveView} />
 
-                {/* Sidebar */}
-                <div className={cn("flex w-64 flex-col border-r border-[#2b2b2b] bg-[#252526]", activeView === 'explorer' ? 'block' : 'hidden')}>
-                    <FileExplorer
-                        projectId={projectId}
-                        onFileSelect={handleFileSelect}
-                        activeFile={activeFile}
-                    />
-
-                    {/* Preview Button in Sidebar for convenience */}
-                    <div className="p-4 border-t border-[#2b2b2b]">
-                        <Button
-                            className="w-full bg-green-700 hover:bg-green-600 text-white"
-                            size="sm"
-                            onClick={() => project && window.open(project.web_url, '_blank')}
-                            disabled={!project}
-                        >
-                            <Play className="h-4 w-4 mr-2" />
-                            Run Project
-                        </Button>
-                        <Button
-                            className="w-full mt-2 bg-blue-700 hover:bg-blue-600 text-white"
-                            size="sm"
-                            onClick={handlePush}
-                            disabled={!project}
-                        >
-                            <Github className="h-4 w-4 mr-2" />
-                            Push to GitHub
-                        </Button>
-                        <Button
-                            className="w-full mt-2"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => router.push('/dashboard')}
-                        >
-                            Back to Dashboard
-                        </Button>
+                    <div className={cn(
+                        "flex flex-col border-r border-[#2b2b2b] bg-[#252526] transition-all duration-300 w-64",
+                        // On desktop always visible if activeView is set (conceptually)
+                        // For now we just keep the sidebar always open on desktop
+                    )}>
+                        {activeView === 'explorer' ? (
+                            <>
+                                <FileExplorer
+                                    projectId={projectId}
+                                    onFileSelect={handleFileSelect}
+                                    activeFile={activeFile}
+                                />
+                                <div className="p-4 border-t border-[#2b2b2b]">
+                                    <Button
+                                        className="w-full bg-green-700 hover:bg-green-600 text-white"
+                                        size="sm"
+                                        onClick={() => project && window.open(project.web_url, '_blank')}
+                                        disabled={!project}
+                                    >
+                                        <Play className="h-4 w-4 mr-2" />
+                                        Run Project
+                                    </Button>
+                                    <Button
+                                        className="w-full mt-2 bg-blue-700 hover:bg-blue-600 text-white"
+                                        size="sm"
+                                        onClick={handlePush}
+                                        disabled={!project}
+                                    >
+                                        <Github className="h-4 w-4 mr-2" />
+                                        Push to GitHub
+                                    </Button>
+                                    <Button
+                                        className="w-full mt-2"
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => router.push('/dashboard')}
+                                    >
+                                        Back to Dashboard
+                                    </Button>
+                                </div>
+                            </>
+                        ) : activeView === 'search' ? (
+                            <Search projectId={projectId} onResultClick={handleSearchResultClick} />
+                        ) : activeView === 'git' ? (
+                            <SourceControl projectId={projectId} />
+                        ) : activeView === 'ai' ? (
+                            <AIAssistant activeFileContent={fileContent} activeFilePath={activeFile || undefined} />
+                        ) : (
+                            <div className="flex-1 p-4 text-sm text-[#858585]">
+                                View {activeView} is not implemented yet.
+                            </div>
+                        )}
                     </div>
                 </div>
 
+                {/* Mobile Drawer / Popup Overlay */}
+                {mobileActiveView && (
+                    <div className="md:hidden absolute inset-0 z-50 bg-[#1e1e1e] flex flex-col animate-in slide-in-from-bottom-full duration-200">
+                        {/* Popup Header */}
+                        <div className="flex items-center justify-between p-3 border-b border-[#2b2b2b] bg-[#252526]">
+                            <span className="font-bold uppercase text-sm">{mobileActiveView}</span>
+                            <Button variant="ghost" size="sm" onClick={() => setMobileActiveView(null)}>
+                                <X className="h-5 w-5" />
+                            </Button>
+                        </div>
+                        {/* Popup Content */}
+                        <div className="flex-1 overflow-hidden flex flex-col">
+                            {mobileActiveView === 'explorer' ? (
+                                <FileExplorer
+                                    projectId={projectId}
+                                    onFileSelect={(path) => {
+                                        handleFileSelect(path);
+                                        setMobileActiveView(null); // Close on select
+                                    }}
+                                    activeFile={activeFile}
+                                />
+                            ) : mobileActiveView === 'search' ? (
+                                <Search projectId={projectId} onResultClick={(path, line) => {
+                                    handleSearchResultClick(path, line);
+                                    setMobileActiveView(null);
+                                }} />
+                            ) : mobileActiveView === 'git' ? (
+                                <SourceControl projectId={projectId} />
+                            ) : mobileActiveView === 'ai' ? (
+                                <AIAssistant activeFileContent={fileContent} activeFilePath={activeFile || undefined} />
+                            ) : null}
+
+                            {/* Mobile Project Actions if in Explorer */}
+                            {mobileActiveView === 'explorer' && (
+                                <div className="p-4 border-t border-[#2b2b2b]">
+                                    <Button className="w-full mb-2" onClick={handlePush}><Github className="mr-2 h-4 w-4" /> Push</Button>
+                                    <Button className="w-full" variant="secondary" onClick={() => setMobileActiveView(null)}>Close</Button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+
                 {/* Editor Area */}
-                <div className="flex flex-1 flex-col bg-[#1e1e1e]">
+                <div className="flex flex-1 flex-col bg-[#1e1e1e] w-full min-w-0">
                     {/* Tabs */}
                     <div className="flex bg-[#252526]">
                         <div className="flex-1 overflow-x-auto no-scrollbar">
@@ -290,17 +396,44 @@ export default function EditorPage({ params }: PageProps) {
                     </div>
 
                     {/* Terminal Panel */}
-                    <div className="h-48 border-t border-[#2b2b2b] bg-[#1e1e1e] flex flex-col">
-                        <div className="flex items-center gap-4 px-4 py-1 text-xs uppercase border-b border-[#2b2b2b] text-[#969696] bg-[#1e1e1e]">
-                            <span className="cursor-pointer hover:text-white border-b border-white text-white py-1">Terminal</span>
+                    <div
+                        className="border-t border-[#2b2b2b] bg-[#1e1e1e] flex flex-col relative transition-all ease-out duration-75"
+                        style={{ height: isTerminalOpen ? terminalHeight : 30 }}
+                    >
+                        {/* Resize Handle only on desktop really, but works on mobile touch too */}
+                        <div
+                            className="absolute top-0 left-0 right-0 h-1 cursor-row-resize hover:bg-[#007acc] z-10"
+                            onMouseDown={(e) => {
+                                e.preventDefault();
+                                setIsResizingTerminal(true);
+                            }}
+                            onTouchStart={() => setIsResizingTerminal(true)}
+                        />
+
+                        {/* Header */}
+                        <div className="flex items-center gap-4 px-4 h-[30px] text-xs uppercase border-b border-[#2b2b2b] text-[#969696] bg-[#1e1e1e] shrink-0">
+                            <span
+                                className="cursor-pointer hover:text-white border-b border-white text-white h-full flex items-center"
+                                onClick={() => setIsTerminalOpen(!isTerminalOpen)}
+                            >
+                                Terminal
+                            </span>
                             <div className="flex-1" />
-                            <X className="h-3 w-3 cursor-pointer hover:text-white" />
+                            <div
+                                className="cursor-pointer hover:text-white"
+                                onClick={() => setIsTerminalOpen(!isTerminalOpen)}
+                            >
+                                {isTerminalOpen ? <X className="h-3 w-3" /> : <div className="h-3 w-3 border border-current rounded-sm" />}
+                            </div>
                         </div>
-                        <div className="flex-1 overflow-hidden">
-                            <TerminalComponent />
+
+                        {/* Body */}
+                        <div className={cn("flex-1 overflow-hidden", !isTerminalOpen && "hidden")}>
+                            <TerminalComponent projectId={projectId} />
                         </div>
                     </div>
                 </div>
+
             </div>
 
             <StatusBar />
