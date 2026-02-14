@@ -11,7 +11,9 @@ import {
     AlertCircle,
     Loader2,
     ArrowUp,
-    ArrowDown
+    ArrowDown,
+    Calendar,
+    ChevronDown
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fetchAPI } from "@/lib/api";
@@ -38,6 +40,9 @@ export function SourceControl({ projectId }: SourceControlProps) {
     const [publishing, setPublishing] = useState(false);
     const [syncStatus, setSyncStatus] = useState<{ ahead: number; behind: number } | null>(null);
 
+    const [commitDate, setCommitDate] = useState("");
+    const [showAdvanced, setShowAdvanced] = useState(false);
+
     const loadStatus = async () => {
         setLoading(true);
         try {
@@ -45,18 +50,6 @@ export function SourceControl({ projectId }: SourceControlProps) {
             setIsGit(data.is_git);
             setChanges(data.changes || []);
             setBranch(data.branch || "");
-
-            // Parse sync status from command output or add a dedicated field in backend
-            // For now, let's assume the backend might send it or we parse parsed output if added.
-            // Since backend is returning simple status, let's just use a placeholder or 
-            // modify backend to return ahead/behind count.
-            // But wait, the user said "Your branch is ahead of 'origin/main' by 2 commits."
-            // We should parse that if it's in the response.
-            // Let's check status.php again. It returns `changes` (file list) and `branch`.
-            // We might need to update status.php to return this info more structured.
-
-            // Actually, let's check if we can get it from the raw output if we were to change the API.
-            // For now, I'll update the frontend to Look for it, but I should probably update the backend first.
         } catch (error) {
             console.error("Failed to load git status", error);
         } finally {
@@ -76,16 +69,24 @@ export function SourceControl({ projectId }: SourceControlProps) {
 
         setCommitting(true);
         try {
+            const payload: any = {
+                project_id: projectId,
+                message: commitMessage
+            };
+
+            // Add date if specified (for backdating)
+            if (commitDate) {
+                payload.date = commitDate;
+            }
+
             const res = await fetchAPI("/github/commit.php", {
                 method: "POST",
-                body: JSON.stringify({
-                    project_id: projectId,
-                    message: commitMessage
-                })
+                body: JSON.stringify(payload)
             });
             if (res.success) {
-                toast.success("Changes committed locally!");
+                toast.success(res.message || "Changes committed!");
                 setCommitMessage("");
+                setCommitDate("");
                 loadStatus();
             }
         } catch (error: any) {
@@ -210,6 +211,35 @@ export function SourceControl({ projectId }: SourceControlProps) {
                         placeholder="Message (Ctrl+Enter to commit)"
                         className="w-full h-20 bg-[#3c3c3c] border border-[#3e3e42] rounded p-2 text-sm focus:outline-none focus:border-[#007acc] resize-none"
                     />
+
+                    {/* Advanced Options Toggle */}
+                    <button
+                        onClick={() => setShowAdvanced(!showAdvanced)}
+                        className="flex items-center gap-1 text-[10px] text-[#858585] hover:text-white transition-colors"
+                    >
+                        <ChevronDown className={cn("h-3 w-3 transition-transform", showAdvanced && "rotate-180")} />
+                        Advanced Options
+                    </button>
+
+                    {/* Backdate Input */}
+                    {showAdvanced && (
+                        <div className="flex flex-col gap-2 p-2 bg-[#2a2d2e] rounded border border-[#3e3e42]">
+                            <label className="flex items-center gap-2 text-[11px] text-[#969696]">
+                                <Calendar className="h-3 w-3" />
+                                Commit Date (Backdate)
+                            </label>
+                            <input
+                                type="datetime-local"
+                                value={commitDate}
+                                onChange={(e) => setCommitDate(e.target.value)}
+                                className="bg-[#3c3c3c] border border-[#3e3e42] rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-[#007acc]"
+                            />
+                            <p className="text-[10px] text-[#6e6e6e]">
+                                Leave empty for current time. Backdating is safe for contribution graph green squares.
+                            </p>
+                        </div>
+                    )}
+
                     <Button
                         size="sm"
                         onClick={handleCommit}
@@ -217,7 +247,7 @@ export function SourceControl({ projectId }: SourceControlProps) {
                         className="w-full bg-[#007acc] hover:bg-[#0062a3] text-white h-8"
                     >
                         {committing ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Check className="h-4 w-4 mr-2" />}
-                        Commit
+                        {commitDate ? 'Commit (Backdated)' : 'Commit'}
                     </Button>
                 </div>
 

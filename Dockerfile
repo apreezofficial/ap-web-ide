@@ -25,7 +25,7 @@ WORKDIR /var/www/html
 COPY . /var/www/html
 
 # Configure Apache DocumentRoot to point to project root (or specific subfolder if needed)
-# Default is /var/www/html which matches our XAMPP structure (ap ai ide root)
+# Default is /var/www/html which matches our XAMPP structure (ap ide root)
 
 # Fix permissions for storage (crucial for file creation)
 # We assume server/storage is where workspaces are.

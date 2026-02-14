@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Shimmer } from "@/components/ui/Shimmer";
 import { fetchAPI } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import { Github, RefreshCw } from "lucide-react";
@@ -11,10 +11,10 @@ import { Github, RefreshCw } from "lucide-react";
 export default function ReposPage() {
     const [githubRepos, setGithubRepos] = useState<any[]>([]);
     const [projects, setProjects] = useState<any[]>([]);
+    const [pagination, setPagination] = useState({ page: 1, per_page: 20 });
     const [loading, setLoading] = useState(true);
     const [importingRepoId, setImportingRepoId] = useState<number | null>(null);
     const router = useRouter();
-
     const languageColors: { [key: string]: string } = {
         "JavaScript": "#f1e05a",
         "TypeScript": "#3178c6",
@@ -37,19 +37,22 @@ export default function ReposPage() {
         return languageColors[lang] || "#8b8b8b";
     };
 
+    console.log("Current page:", pagination.page);
+
     useEffect(() => {
-        loadData();
+        loadData(1);
     }, []);
 
-    const loadData = async () => {
+    const loadData = async (page = 1) => {
         setLoading(true);
         try {
             const [reposData, projectsData] = await Promise.all([
-                fetchAPI("/github/repos.php"),
+                fetchAPI(`/github/repos.php?page=${page}&per_page=20`),
                 fetchAPI("/projects/list.php")
             ]);
             setGithubRepos(reposData.repos || []);
             setProjects(projectsData.projects || []);
+            setPagination(prev => ({ ...prev, page }));
         } catch (error) {
             console.error("Failed to load GitHub repos", error);
         } finally {
@@ -84,16 +87,16 @@ export default function ReposPage() {
                     <Card key={i} className="border-border bg-card">
                         <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2">
                             <div className="flex-1 space-y-2">
-                                <Skeleton className="h-6 w-1/3" />
-                                <Skeleton className="h-4 w-full" />
+                                <Shimmer className="h-6 w-1/3" />
+                                <Shimmer className="h-4 w-full" />
                             </div>
-                            <Skeleton className="h-9 w-full sm:w-32" />
+                            <Shimmer className="h-9 w-full sm:w-32" />
                         </CardHeader>
                         <CardContent>
                             <div className="flex gap-4 pt-2">
-                                <Skeleton className="h-4 w-20" />
-                                <Skeleton className="h-4 w-20" />
-                                <Skeleton className="h-4 w-20" />
+                                <Shimmer className="h-4 w-20" />
+                                <Shimmer className="h-4 w-20" />
+                                <Shimmer className="h-4 w-20" />
                             </div>
                         </CardContent>
                     </Card>
@@ -158,7 +161,33 @@ export default function ReposPage() {
                         <Github className="h-6 w-6 text-muted-foreground" />
                     </div>
                     <p className="text-muted-foreground">No GitHub repositories found or failed to load.</p>
-                    <Button variant="outline" size="sm" onClick={loadData}>Retry</Button>
+                    <Button variant="outline" size="sm" onClick={() => loadData(1)}>Retry</Button>
+                </div>
+            )}
+
+            {!loading && githubRepos.length > 0 && (
+                <div className="flex items-center justify-between pt-6 border-t mt-4">
+                    <p className="text-sm text-muted-foreground">
+                        Showing {githubRepos.length} repositories
+                    </p>
+                    <div className="flex gap-2">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={pagination.page === 1}
+                            onClick={() => loadData(pagination.page - 1)}
+                        >
+                            Previous
+                        </Button>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={githubRepos.length < pagination.per_page}
+                            onClick={() => loadData(pagination.page + 1)}
+                        >
+                            Next
+                        </Button>
+                    </div>
                 </div>
             )}
         </div>

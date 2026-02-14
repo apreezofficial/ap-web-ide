@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Shimmer } from "@/components/ui/Shimmer";
 import { fetchAPI } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import { Plus, Folder, Trash2 } from "lucide-react";
@@ -19,24 +19,33 @@ interface Project {
 
 export default function ProjectsPage() {
     const [projects, setProjects] = useState<Project[]>([]);
+    const [pagination, setPagination] = useState({ total: 0, page: 1, limit: 5, pages: 1 });
     const [newProjectName, setNewProjectName] = useState("");
     const [loading, setLoading] = useState(true);
     const router = useRouter();
 
     useEffect(() => {
-        loadProjects();
+        loadProjects(1, pagination.limit);
     }, []);
 
-    const loadProjects = async () => {
+    const loadProjects = async (page = 1, limit = pagination.limit) => {
         setLoading(true);
         try {
-            const data = await fetchAPI("/projects/list.php");
+            const data = await fetchAPI(`/projects/list.php?page=${page}&limit=${limit}`);
             setProjects(data.projects || []);
+            if (data.pagination) {
+                setPagination(data.pagination);
+            }
         } catch (error) {
             console.error("Failed to load projects", error);
         } finally {
             setLoading(false);
         }
+    };
+
+    const handlePageSizeChange = (newSize: number) => {
+        setPagination(prev => ({ ...prev, limit: newSize }));
+        loadProjects(1, newSize);
     };
 
     const handleCreateProject = async () => {
@@ -91,16 +100,16 @@ export default function ProjectsPage() {
                     Array.from({ length: 4 }).map((_, i) => (
                         <Card key={i} className="overflow-hidden border-border bg-card">
                             <CardHeader className="pb-3">
-                                <Skeleton className="h-10 w-10 rounded-lg mb-2" />
-                                <Skeleton className="h-6 w-3/4 mb-1" />
-                                <Skeleton className="h-4 w-1/2" />
+                                <Shimmer className="h-10 w-10 rounded-lg mb-2" />
+                                <Shimmer className="h-6 w-3/4 mb-1" />
+                                <Shimmer className="h-4 w-1/2" />
                             </CardHeader>
                             <CardContent className="pb-3">
-                                <Skeleton className="h-8 w-full rounded" />
+                                <Shimmer className="h-8 w-full rounded" />
                             </CardContent>
                             <CardFooter className="flex gap-2 pt-0">
-                                <Skeleton className="h-9 flex-1" />
-                                <Skeleton className="h-9 w-9 rounded-md" />
+                                <Shimmer className="h-9 flex-1" />
+                                <Shimmer className="h-9 w-9 rounded-md" />
                             </CardFooter>
                         </Card>
                     ))
@@ -158,6 +167,52 @@ export default function ProjectsPage() {
                     </div>
                 )}
             </div>
+
+            {!loading && (projects.length > 0 || pagination.total > 0) && (
+                <div className="flex flex-col sm:flex-row items-center justify-between pt-6 border-t mt-4 gap-4">
+                    <div className="flex items-center gap-4">
+                        <p className="text-sm text-muted-foreground whitespace-nowrap">
+                            Showing {projects.length} of {pagination.total} projects
+                        </p>
+                        <div className="flex items-center gap-2 bg-muted/50 p-1 rounded-lg border">
+                            {[5, 10].map((size) => (
+                                <button
+                                    key={size}
+                                    onClick={() => handlePageSizeChange(size)}
+                                    className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${pagination.limit === size
+                                            ? "bg-background text-foreground shadow-sm"
+                                            : "text-muted-foreground hover:text-foreground"
+                                        }`}
+                                >
+                                    {size}
+                                </button>
+                            ))}
+                            <span className="text-[10px] text-muted-foreground px-1 uppercase font-bold">per page</span>
+                        </div>
+                    </div>
+
+                    {pagination.pages > 1 && (
+                        <div className="flex gap-2">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={pagination.page === 1}
+                                onClick={() => loadProjects(pagination.page - 1)}
+                            >
+                                Previous
+                            </Button>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={pagination.page === pagination.pages}
+                                onClick={() => loadProjects(pagination.page + 1)}
+                            >
+                                Next
+                            </Button>
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
     );
 }

@@ -14,7 +14,7 @@ if (!Auth::check()) {
 $data = json_decode(file_get_contents('php://input'), true);
 $uuid = $data['project_id'] ?? null;
 $name = $data['name'] ?? null;
-$description = $data['description'] ?? 'Created from AP AI IDE';
+$description = $data['description'] ?? 'Created from AP IDE';
 $private = isset($data['private']) ? (bool)$data['private'] : true;
 
 if (!$uuid || !$name) {
@@ -83,7 +83,7 @@ try {
     // Add, Commit, Push
     $cmds = [
         "git add .",
-        "git commit -m 'Initial commit from AP AI IDE'",
+        "git commit -m 'Initial commit from AP IDE'",
         "git branch -M main",
         "git push -u origin main"
     ];

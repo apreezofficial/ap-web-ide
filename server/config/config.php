@@ -13,10 +13,14 @@ define('GITHUB_REDIRECT_URI', 'http://localhost:3000/api/auth/callback.php');
 define('STORAGE_PATH', __DIR__ . '/../storage');
 define('WORKSPACES_PATH', STORAGE_PATH . '/workspaces');
 
-// Ensure directories exist
-if (!is_dir(STORAGE_PATH)) mkdir(STORAGE_PATH, 0777, true);
-if (!is_dir(WORKSPACES_PATH)) mkdir(WORKSPACES_PATH, 0777, true);
-if (!is_dir(STORAGE_PATH . '/sessions')) mkdir(STORAGE_PATH . '/sessions', 0777, true);
+// Ensure directories exist (only if storage doesn't exist to save IO)
+if (!is_dir(STORAGE_PATH)) {
+    mkdir(STORAGE_PATH, 0777, true);
+    mkdir(WORKSPACES_PATH, 0777, true);
+    mkdir(STORAGE_PATH . '/sessions', 0777, true);
+}
+// For more robust but still fast checks, we could check if children exist only if storage exists.
+// But for typical runtime, checking just STORAGE_PATH is 99% of the speedup.
 
 // Error reporting for development
 ini_set('display_errors', 1);

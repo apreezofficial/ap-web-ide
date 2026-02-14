@@ -22,6 +22,7 @@ if (!$projectId) {
 }
 
 $user = Auth::user();
+session_write_close();
 $projectLib = new Project($user['id']);
 $project = $projectLib->get($projectId);
 

@@ -20,6 +20,7 @@ if (!$uuid) {
 }
 
 $user = Auth::user();
+session_write_close();
 $projectLib = new Project($user['id']);
 
 try {

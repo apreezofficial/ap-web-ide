@@ -12,6 +12,7 @@ if (!Auth::check()) {
 
 $user = Auth::user();
 $accessToken = $user['access_token'];
+session_write_close();
 
 function githubRequest($url, $accessToken) {
     $ch = curl_init($url);
@@ -32,14 +33,31 @@ function githubRequest($url, $accessToken) {
 }
 
 try {
-    // Fetch user's public and private repos (since we have 'repo' scope)
-    $repos = githubRequest('https://api.github.com/user/repos?sort=updated&per_page=100', $accessToken);
+    $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+    $perPage = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 20;
+    
+    $cacheKey = 'github_repos_' . $user['github_id'] . "_p{$page}_l{$perPage}";
+    $cacheTime = $_SESSION['github_repos_time_' . $cacheKey] ?? 0;
+    $forceRefresh = isset($_GET['refresh']);
+
+    // Cache for 5 minutes (300 seconds)
+    if (!$forceRefresh && isset($_SESSION[$cacheKey]) && (time() - $cacheTime < 300)) {
+        echo json_encode(['repos' => $_SESSION[$cacheKey], 'cached' => true]);
+        exit;
+    }
+
+    // Fetch user's public and private repos
+    $repos = githubRequest("https://api.github.com/user/repos?sort=updated&page=$page&per_page=$perPage", $accessToken);
     
     if ($repos === null) {
         throw new Exception("Failed to fetch repositories from GitHub");
     }
+
+    // Store in session cache
+    $_SESSION[$cacheKey] = $repos;
+    $_SESSION['github_repos_time_' . $cacheKey] = time();
     
-    echo json_encode(['repos' => $repos]);
+    echo json_encode(['repos' => $repos, 'cached' => false]);
 } catch (Exception $e) {
     http_response_code(500);
     echo json_encode(['error' => $e->getMessage()]);

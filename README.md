@@ -1,4 +1,4 @@
-# AP AI IDE 💻
+# AP IDE 💻
 
 ## Overview
 A high-performance, cloud-based development environment built using a Next.js TypeScript frontend and a PHP REST API. This platform provides a full-featured code editor with file system persistence and workspace management.

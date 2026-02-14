@@ -45,7 +45,7 @@ try {
     // Add, Commit, and Push
     $cmds = [
         "git add .",
-        'git commit -m "Updated from AP AI IDE"',
+        'git commit -m "Updated from AP IDE"',
         "git push origin main" // Fixed to push to main, maybe detect branch later?
     ];
     

@@ -93,13 +93,24 @@ class Auth {
 
     public static function user() {
         if (!self::check()) return null;
+        
+        // Return cached user if available to save DB query
+        if (isset($_SESSION['cached_user']) && $_SESSION['cached_user']['id'] == $_SESSION['user_id']) {
+            return $_SESSION['cached_user'];
+        }
+
         $db = Database::getInstance()->getConnection();
         $stmt = $db->prepare("SELECT * FROM users WHERE id = ?");
         $stmt->execute([$_SESSION['user_id']]);
-        return $stmt->fetch(PDO::FETCH_ASSOC);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        // Cache user in session
+        $_SESSION['cached_user'] = $user;
+        return $user;
     }
 
     public static function logout() {
+        unset($_SESSION['cached_user']);
         session_destroy();
     }
 }

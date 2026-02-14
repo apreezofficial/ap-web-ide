@@ -43,7 +43,7 @@ export default function Home() {
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 mb-2">
             <Code2 className="h-6 w-6 text-primary" />
           </div>
-          <CardTitle className="text-3xl font-bold tracking-tight">AP AI IDE</CardTitle>
+          <CardTitle className="text-3xl font-bold tracking-tight">AP IDE</CardTitle>
           <CardDescription className="text-base text-muted-foreground">
             Cloud-based development environment
           </CardDescription>

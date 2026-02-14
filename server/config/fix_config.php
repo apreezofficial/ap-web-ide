@@ -31,5 +31,5 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 EOD;
 
-file_put_contents('c:/xampp/htdocs/ap ai ide/server/config/config.php', $content);
+file_put_contents('c:/xampp/htdocs/ap ide/server/config/config.php', $content);
 echo "File written successfully.";

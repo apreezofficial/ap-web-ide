@@ -1,5 +1,5 @@
 <?php
-// api/github/commit.php
+// api/github/commit.php - Commit with optional backdating
 require_once __DIR__ . '/../../lib/Auth.php';
 require_once __DIR__ . '/../../lib/Project.php';
 
@@ -12,57 +12,85 @@ if (!Auth::check()) {
 }
 
 $data = json_decode(file_get_contents('php://input'), true);
-$uuid = $data['project_id'] ?? null;
-$message = $data['message'] ?? 'Updated from AP AI IDE';
+$projectId = $data['project_id'] ?? null;
+$message = $data['message'] ?? 'Update from AP IDE';
+$date = $data['date'] ?? null; // ISO format: 2026-01-18T09:00:00
 
-if (!$uuid) {
+if (!$projectId) {
     http_response_code(400);
-    echo json_encode(['error' => 'Project UUID required']);
+    echo json_encode(['error' => 'Project ID required']);
     exit;
 }
 
 $user = Auth::user();
 $projectLib = new Project($user['id']);
+$project = $projectLib->get($projectId);
 
-try {
-    $project = $projectLib->get($uuid);
-    if (!$project) {
-        throw new Exception("Project not found");
-    }
+if (!$project) {
+    http_response_code(404);
+    echo json_encode(['error' => 'Project not found']);
+    exit;
+}
 
-    $projectPath = WORKSPACES_PATH . '/' . $user['id'] . '/' . $project['path'];
+$projectPath = WORKSPACES_PATH . '/' . $user['id'] . '/' . $project['path'];
+
+// Auto-init git repository if not already initialized
+if (!is_dir($projectPath . '/.git')) {
+    $initCmd = "cd " . escapeshellarg($projectPath) . " && git init 2>&1";
+    exec($initCmd, $initOutput, $initReturn);
     
-    if (!is_dir($projectPath . '/.git')) {
-        throw new Exception("Project is not a Git repository");
+    if ($initReturn !== 0) {
+        echo json_encode(['error' => 'Failed to initialize git repository: ' . implode("\n", $initOutput)]);
+        exit;
     }
-
-    // Configure git user
-    exec("cd " . escapeshellarg($projectPath) . " && git config user.name " . escapeshellarg($user['username']));
-    exec("cd " . escapeshellarg($projectPath) . " && git config user.email " . escapeshellarg($user['email'] ?: 'user@example.com'));
-
-    $output = [];
-    $returnVar = 0;
     
-    // Stage all changes and commit
-    $command = "cd " . escapeshellarg($projectPath) . " && git add . && git commit -m " . escapeshellarg($message);
-    exec($command . " 2>&1", $output, $returnVar);
+    // Set default user config if not set globally
+    $configCmd = "cd " . escapeshellarg($projectPath) . " && git config user.email \"user@apide.local\" && git config user.name \"AP IDE User\" 2>&1";
+    exec($configCmd);
+}
 
-    // If git commit fails with non-zero exit code
-    if ($returnVar !== 0) {
-        $outputStr = implode("\n", $output);
-        // Check if it's just that there's nothing to commit
-        if (strpos($outputStr, 'nothing to commit') !== false || strpos($outputStr, 'working tree clean') !== false) {
-             // This is fine, just means no changes.
-             // We can return success or a specific info message.
-             echo json_encode(['success' => true, 'message' => 'Nothing to commit', 'output' => $output]);
-             exit;
-        } else {
-             throw new Exception("Git Commit failed: " . $outputStr);
-        }
+// Build commit command
+$escapedMessage = escapeshellarg($message);
+$cmd = "cd " . escapeshellarg($projectPath) . " && git add -A && ";
+
+if ($date) {
+    // Validate date format (basic check)
+    if (strtotime($date) === false) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Invalid date format. Use ISO format like 2026-01-18T09:00:00']);
+        exit;
     }
+    
+    $escapedDate = escapeshellarg($date);
+    
+    // Set both author and committer date for consistency
+    if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
+        // Windows PowerShell syntax
+        $cmd .= "\$env:GIT_AUTHOR_DATE={$escapedDate}; \$env:GIT_COMMITTER_DATE={$escapedDate}; git commit -m {$escapedMessage}";
+    } else {
+        // Unix/Linux syntax
+        $cmd .= "GIT_AUTHOR_DATE={$escapedDate} GIT_COMMITTER_DATE={$escapedDate} git commit -m {$escapedMessage}";
+    }
+} else {
+    $cmd .= "git commit -m {$escapedMessage}";
+}
 
-    echo json_encode(['success' => true, 'output' => $output]);
-} catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode(['error' => $e->getMessage()]);
+$cmd .= " 2>&1";
+
+exec($cmd, $output, $returnVar);
+$outputStr = implode("\n", $output);
+
+if ($returnVar !== 0 && strpos($outputStr, 'nothing to commit') === false) {
+    echo json_encode([
+        'success' => false,
+        'error' => $outputStr ?: 'Commit failed'
+    ]);
+} else {
+    echo json_encode([
+        'success' => true,
+        'message' => strpos($outputStr, 'nothing to commit') !== false 
+            ? 'Nothing to commit (working tree clean)' 
+            : 'Committed successfully' . ($date ? " with date: $date" : ''),
+        'output' => $outputStr
+    ]);
 }

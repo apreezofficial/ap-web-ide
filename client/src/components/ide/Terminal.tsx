@@ -38,39 +38,124 @@ export function TerminalComponent({ projectId }: TerminalProps) {
 
         xtermRef.current = term;
 
-        term.writeln("\x1b[32mWelcome to AP AI IDE Terminal\x1b[0m");
+        term.writeln("\x1b[32mWelcome to AP IDE Terminal\x1b[0m");
 
         let currentPrompt = "\x1b[34m~\x1b[0m $ ";
         term.write(currentPrompt);
 
+        let isProcessing = false;
+        let activeProcessId: string | null = null;
         let currentLine = "";
 
+        // Global listener for executing commands from other components
+        const handleTerminalRun = (e: any) => {
+            const { command } = e.detail;
+            if (!command) return;
+
+            // Clean up command
+            const cleanCmd = command.trim();
+
+            // For visual feedback, show the command being "typed" or pasted
+            // If multi-line, we should probably just write it as is but ensure \r
+            const terminalFriendlyCmd = cleanCmd.replace(/\n/g, '\r\n');
+            term.write(terminalFriendlyCmd + '\r');
+
+            // Trigger the execution logic
+            executeCommand(cleanCmd);
+        };
+
+        const executeCommand = (command: string) => {
+            if (isProcessing) return;
+
+            // Add to history
+            historyRef.current.push(command);
+            historyIndexRef.current = -1;
+
+            isProcessing = true;
+            activeProcessId = null;
+            term.write("\x1b[36m⚡ Executing Task...\x1b[0m\r\n");
+
+            fetch('/api/terminal/exec.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ command: command, project_id: projectId })
+            }).then(async (response) => {
+                if (!response.body) throw new Error("No response body");
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = "";
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split("\n");
+                    buffer = lines.pop() || "";
+
+                    for (const line of lines) {
+                        if (!line.trim()) continue;
+                        try {
+                            const json = JSON.parse(line);
+                            if (json.type === 'output') {
+                                // Sanitize path: hide full server path and show '~' instead
+                                let sanitizedData = json.data;
+                                const workspacePathRegex = /C:.*[\\\/]storage[\\\/]workspaces[\\\/]\d+[\\\/][^\\\/\s]+/g;
+                                sanitizedData = sanitizedData.replace(workspacePathRegex, '~');
+
+                                term.write(sanitizedData.replace(/\n/g, '\r\n'));
+                            } else if (json.type === 'meta') {
+                                if (json.process_id) {
+                                    activeProcessId = json.process_id;
+                                }
+                                if (json.cwd !== undefined) {
+                                    const cwd = json.cwd || "~";
+                                    const user = json.user || "user";
+                                    currentPrompt = `\x1b[32m${user}@ap-ide\x1b[0m:\x1b[34m${cwd}\x1b[0m$ `;
+                                }
+                            } else if (json.type === 'error') {
+                                term.write(`\x1b[31mError: ${json.data}\x1b[0m\r\n`);
+                            }
+                        } catch (e) {
+                            console.error("Failed to parse chunk", line, e);
+                        }
+                    }
+                }
+
+                isProcessing = false;
+                activeProcessId = null;
+                term.write(currentPrompt);
+                currentLine = "";
+            }).catch((err: any) => {
+                isProcessing = false;
+                activeProcessId = null;
+                term.write(`\x1b[31mError: ${err.message}\x1b[0m\r\n`);
+                term.write(currentPrompt);
+                currentLine = "";
+            });
+        };
+
+        window.addEventListener('terminal:run-command', handleTerminalRun);
+
         term.onData(e => {
+            if (isProcessing && activeProcessId) {
+                // Forward input to process stdin
+                fetch('/api/terminal/stdin.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ process_id: activeProcessId, input: e })
+                }).catch(err => console.error("Stdin failed:", err));
+                return;
+            }
+
+            if (isProcessing) return;
+
             switch (e) {
                 case '\r': // Enter
                     term.write('\r\n');
                     if (currentLine.trim()) {
-                        // Add to history
-                        historyRef.current.push(currentLine);
-                        historyIndexRef.current = -1;
-
-                        fetchAPI('/terminal/exec.php', {
-                            method: 'POST',
-                            body: JSON.stringify({ command: currentLine, project_id: projectId })
-                        }).then((res: any) => {
-                            const output = (res.output || "").replace(/\n/g, '\r\n');
-                            if (output) term.write(output);
-
-                            const cwd = res.cwd || "~";
-                            const user = res.user || "user";
-                            currentPrompt = `\x1b[32m${user}@ap-ide\x1b[0m:\x1b[34m${cwd}\x1b[0m$ `;
-                            term.write(currentPrompt);
-                            currentLine = "";
-                        }).catch((err: any) => {
-                            term.write(`\x1b[31mError: ${err.message}\x1b[0m\r\n`);
-                            term.write(currentPrompt);
-                            currentLine = "";
-                        });
+                        executeCommand(currentLine);
                     } else {
                         term.write(currentPrompt);
                     }
@@ -141,6 +226,7 @@ export function TerminalComponent({ projectId }: TerminalProps) {
         return () => {
             term.dispose();
             resizeObserver.disconnect();
+            window.removeEventListener('terminal:run-command', handleTerminalRun);
         };
     }, [projectId]);
 

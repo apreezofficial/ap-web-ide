@@ -130,7 +130,7 @@ export default function DemoPage() {
                             />
                         ) : (
                             <div className="flex h-full items-center justify-center text-[#585858] flex-col gap-4">
-                                <div className="text-6xl opacity-20">AP AI IDE</div>
+                                <div className="text-6xl opacity-20">AP IDE</div>
                                 <div className="text-sm">Select a file to start editing</div>
                                 <div className="flex gap-2 text-xs">
                                     <span>Show All Commands</span>

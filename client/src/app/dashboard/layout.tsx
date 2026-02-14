@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { Code2, LogOut, LayoutDashboard, Github, Loader2 } from "lucide-react";
+import { Code2, LogOut, LayoutDashboard, Github, Loader2, Settings } from "lucide-react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -41,6 +41,7 @@ export default function DashboardLayout({
     const tabs = [
         { name: "Projects", href: "/dashboard/projects", icon: LayoutDashboard },
         { name: "GitHub Repos", href: "/dashboard/repos", icon: Github },
+        { name: "Settings", href: "/dashboard/settings", icon: Settings },
     ];
 
     if (loading) {
@@ -57,7 +58,7 @@ export default function DashboardLayout({
                 <div className="container mx-auto flex h-16 items-center justify-between px-4">
                     <Link href="/dashboard" className="flex items-center gap-2 font-bold text-xl hover:opacity-80 transition-opacity">
                         <Code2 className="h-6 w-6 text-primary" />
-                        <span>AP AI IDE</span>
+                        <span>AP IDE</span>
                     </Link>
                     <Button variant="ghost" size="sm" onClick={handleLogout} className="hover:bg-destructive/10 hover:text-destructive">
                         <LogOut className="mr-2 h-4 w-4" />

@@ -54,56 +54,121 @@ class Project {
         return $uuid;
     }
 
-    public function importFromGithub($name, $cloneUrl) {
-        // Sanitize name to be filesystem safe
-        $safeName = preg_replace('/[^a-zA-Z0-9_-]/', '', $name);
-        $projectPath = WORKSPACES_PATH . '/' . $this->userId . '/' . $safeName;
+    public function list($limit = null, $offset = 0) {
+        $userPath = WORKSPACES_PATH . '/' . $this->userId;
         
-        if (is_dir($projectPath)) {
-            // If it exists, we might want to skip or overwrite. 
-            // For now, let's append a timestamp if it exists.
-            if (is_dir($projectPath)) {
-               $safeName .= '_' . time();
-               $projectPath = WORKSPACES_PATH . '/' . $this->userId . '/' . $safeName;
+        // Fetch all tracked paths in one query
+        $stmt = $this->db->prepare("SELECT path FROM projects WHERE user_id = ?");
+        $stmt->execute([$this->userId]);
+        $trackedPaths = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        
+        if (is_dir($userPath)) {
+            $folders = array_diff(scandir($userPath), array('.', '..'));
+            foreach ($folders as $folder) {
+                if (is_dir($userPath . '/' . $folder) && !in_array($folder, $trackedPaths)) {
+                    // Auto-import only if it's not already tracked
+                    $uuid = $this->generateUUID();
+                    $stmt = $this->db->prepare("INSERT INTO projects (user_id, uuid, name, path) VALUES (?, ?, ?, ?)");
+                    $stmt->execute([$this->userId, $uuid, $folder, $folder]);
+                }
             }
         }
 
+        $query = "SELECT * FROM projects WHERE user_id = ? ORDER BY last_accessed DESC";
+        
+        if ($limit !== null) {
+            // Use direct injection for LIMIT/OFFSET since PDO execute() quotes everything as strings,
+            // which causes a syntax error in some MariaDB/MySQL configurations.
+            $query .= " LIMIT " . (int)$limit . " OFFSET " . (int)$offset;
+        }
+
+        $stmt = $this->db->prepare($query);
+        $stmt->execute([$this->userId]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    public function count() {
+        $stmt = $this->db->prepare("SELECT COUNT(*) FROM projects WHERE user_id = ?");
+        $stmt->execute([$this->userId]);
+        return (int)$stmt->fetchColumn();
+    }
+
+    public function importFromGithub($name, $cloneUrl) {
+        // Sanitize name to be filesystem safe
+        $safeName = preg_replace('/[^a-zA-Z0-9_-]/', '', $name);
+        $userPath = WORKSPACES_PATH . '/' . $this->userId;
+        $projectPath = $userPath . '/' . $safeName;
+        
         // Create user workspace directory if not exists
-        if (!is_dir(WORKSPACES_PATH . '/' . $this->userId)) {
-            mkdir(WORKSPACES_PATH . '/' . $this->userId, 0777, true);
+        if (!is_dir($userPath)) {
+            mkdir($userPath, 0777, true);
+        }
+
+        if (is_dir($projectPath)) {
+             $safeName .= '_' . time();
+             $projectPath = $userPath . '/' . $safeName;
         }
 
         // Use git clone
         $user = Auth::user();
-        $token = $user['access_token'];
+        $token = $user['access_token'] ?? '';
         
         // Ensure we use the token correctly
-        if (strpos($cloneUrl, 'https://github.com/') === 0) {
+        if ($token && (strpos($cloneUrl, 'https://github.com/') === 0)) {
             $authCloneUrl = str_replace('https://github.com/', "https://$token@github.com/", $cloneUrl);
         } else {
-            $authCloneUrl = $cloneUrl; // Fallback
+            $authCloneUrl = $cloneUrl;
+        }
+
+        // Find git binary if not in PATH
+        $gitCmd = 'git';
+        if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
+            $possibleGitPaths = [
+                'C:\Program Files\Git\bin\git.exe',
+                'C:\Program Files (x86)\Git\bin\git.exe',
+                'D:\Program Files\Git\bin\git.exe',
+                'C:\xampp\git\bin\git.exe'
+            ];
+            foreach ($possibleGitPaths as $p) {
+                if (file_exists($p)) {
+                    $gitCmd = escapeshellarg($p);
+                    break;
+                }
+            }
         }
         
         $escapedCloneUrl = escapeshellarg($authCloneUrl);
         $escapedPath = escapeshellarg($projectPath);
         
-        // Run git clone
-        $command = "git clone $escapedCloneUrl $escapedPath 2>&1";
+        // Ensure some common dirs are in PATH for internal git operations
+        $envPath = getenv('PATH');
+        if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN' && strpos($envPath, 'C:\Windows\System32') === false) {
+             $envPath .= ';C:\Windows\System32;C:\Windows\SysWOW64';
+             putenv("PATH=$envPath");
+        }
+
+        $command = "$gitCmd clone $escapedCloneUrl $escapedPath 2>&1";
+        
+        // Capture output for detailed error reporting
         exec($command, $output, $returnVar);
 
         if ($returnVar !== 0) {
-            // Cleanup directory on failure
             if (is_dir($projectPath)) {
                 $this->deleteDir($projectPath);
             }
             
-            // Scrub token from error message for security
-            $errorMessage = str_replace($token, 'GITHUB_TOKEN', implode("\n", $output));
+            $errorMessage = implode("\n", $output);
+            if ($token) {
+                $errorMessage = str_replace($token, 'GITHUB_TOKEN', $errorMessage);
+            }
             
-            // Log for debugging (optional, but good for "fr fr")
-            error_log("Git clone failed: " . $errorMessage);
-            
-            throw new Exception("Failed to clone repository. Make sure the repo exists and is accessible. Error: " . $errorMessage);
+            error_log("Git clone failed for user {$this->userId}: " . $errorMessage);
+            throw new Exception("Failed to clone repository. Error: " . ($errorMessage ?: "Unknown error (code $returnVar)"));
+        }
+
+        // Verify it was actually created
+        if (!is_dir($projectPath)) {
+            throw new Exception("Cloning finished but directory was not created.");
         }
 
         // Save to DB
@@ -112,12 +177,6 @@ class Project {
         $stmt->execute([$this->userId, $uuid, $name, $safeName, $cloneUrl]);
         
         return $uuid;
-    }
-
-    public function list() {
-        $stmt = $this->db->prepare("SELECT * FROM projects WHERE user_id = ? ORDER BY last_accessed DESC");
-        $stmt->execute([$this->userId]);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
     
     public function get($uuid) {
@@ -135,6 +194,24 @@ class Project {
         
         $stmt = $this->db->prepare("DELETE FROM projects WHERE uuid = ?");
         return $stmt->execute([$uuid]);
+    }
+
+    public function clearAll() {
+        $stmt = $this->db->prepare("SELECT uuid FROM projects WHERE user_id = ?");
+        $stmt->execute([$this->userId]);
+        $projects = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        foreach ($projects as $project) {
+            $this->delete($project['uuid']);
+        }
+        
+        // Also cleanup workspace dir if anything left
+        $userPath = WORKSPACES_PATH . '/' . $this->userId;
+        if (is_dir($userPath)) {
+            $this->deleteDir($userPath);
+        }
+        
+        return true;
     }
 
     private function deleteDir($dirPath) {
